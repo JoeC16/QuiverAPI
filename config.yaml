@@ -1,1 +1,19 @@
+scoring:
+  buy_base: 25
+  sell_penalty: -20
+  insider_buy_bonus: 30
+  exec_role_bonus: 10
+  large_trade_bonus: 10
+  recency_bonus: 10
+  cluster_bonus: 15
+  contract_bonus: 20
+  history_bonus: 15
+  stale_penalty: -10
 
+thresholds:
+  high_conviction: 85
+  top_picks: 7
+
+patterns:
+  cluster_days: 10
+  contract_window_days: 14
