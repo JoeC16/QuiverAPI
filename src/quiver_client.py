@@ -1,43 +1,80 @@
+import time
 import requests
 from config import QUIVER_API_KEY
 
 BASE = "https://api.quiverquant.com/beta"
 
+DEFAULT_TIMEOUT = 30
+MAX_RETRIES = 3
+BACKOFF_S = 1.5
+
+
 def _headers():
-    # Quiver authentication can vary by plan/version.
-    # We send both common header styles to be robust.
+    # Quiver auth commonly works with Authorization: Token <key>
+    # Some setups use Bearer. We support both by sending Token.
     return {
-        "Authorization": f"Bearer {QUIVER_API_KEY}",
-        "X-API-Key": QUIVER_API_KEY,
+        "Authorization": f"Token {QUIVER_API_KEY}",
         "Accept": "application/json",
-        "User-Agent": "quiver-trade-monitor/1.1"
+        "User-Agent": "qq-trade-monitor/1.1",
     }
 
-def _get_json(path: str):
+
+def _get_json(path: str, params=None):
     url = f"{BASE}{path}"
-    r = requests.get(url, headers=_headers(), timeout=30)
+    last_err = None
 
-    # Fail fast with useful diagnostics
-    ct = (r.headers.get("Content-Type") or "").lower()
-    if r.status_code != 200:
-        raise RuntimeError(
-            f"Quiver API error {r.status_code} for {url}. "
-            f"Content-Type={ct}. Body (first 300 chars): {r.text[:300]}"
-        )
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            r = requests.get(url, headers=_headers(), params=params, timeout=DEFAULT_TIMEOUT)
+            ct = (r.headers.get("Content-Type") or "").lower()
+            preview = (r.text or "")[:300]
 
-    if "application/json" not in ct:
-        raise RuntimeError(
-            f"Quiver API returned non-JSON for {url}. "
-            f"Content-Type={ct}. Body (first 300 chars): {r.text[:300]}"
-        )
+            if r.status_code >= 400:
+                raise RuntimeError(
+                    f"Quiver API error {r.status_code} for {url}. "
+                    f"Content-Type={ct}. Body (first 300 chars): {preview}"
+                )
 
-    return r.json()
+            # Try to parse JSON even if content-type is missing/mis-set
+            try:
+                return r.json()
+            except Exception as e:
+                raise RuntimeError(
+                    f"Quiver returned non-JSON for {url}. Content-Type={ct}. "
+                    f"Body (first 300 chars): {preview}"
+                ) from e
+
+        except Exception as e:
+            last_err = e
+            if attempt < MAX_RETRIES:
+                time.sleep(BACKOFF_S * attempt)
+                continue
+            raise
+
+
+# -----------------------
+# V1 feeds (latest)
+# -----------------------
 
 def fetch_government_trades():
-    return _get_json("/historical/congresstrading")
+    # Latest congress trades feed
+    return _get_json("/live/congresstrading")
+
 
 def fetch_insider_trades():
-    return _get_json("/insidertrading")
+    # Insider endpoint varies by plan. Start here; if it 404s, we’ll adjust once from logs.
+    return _get_json("/live/insiders")
+
 
 def fetch_contracts():
-    return _get_json("/governmentcontracts")
+    # Latest contract awards feed across all tickers
+    return _get_json("/live/govcontractsall")
+
+
+# -----------------------
+# Optional (V1.2+): historical by ticker
+# -----------------------
+
+def fetch_congress_trades_by_ticker(ticker: str):
+    t = ticker.upper().strip()
+    return _get_json(f"/historical/congresstrading/{t}")
