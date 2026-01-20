@@ -10,8 +10,8 @@ BACKOFF_S = 1.5
 
 
 def _headers():
-    # Quiver auth commonly works with Authorization: Token <key>
-    # Some setups use Bearer. We support both by sending Token.
+    # Quiver auth for hobbyist commonly works with Authorization: Token <key>
+    # If your account ever requires X-API-Key, add it back.
     return {
         "Authorization": f"Token {QUIVER_API_KEY}",
         "Accept": "application/json",
@@ -21,8 +21,8 @@ def _headers():
 
 def _get_json(path: str, params=None):
     url = f"{BASE}{path}"
-    last_err = None
 
+    last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             r = requests.get(url, headers=_headers(), params=params, timeout=DEFAULT_TIMEOUT)
@@ -30,12 +30,13 @@ def _get_json(path: str, params=None):
             preview = (r.text or "")[:300]
 
             if r.status_code >= 400:
+                # Raise with diagnostics for Actions logs
                 raise RuntimeError(
                     f"Quiver API error {r.status_code} for {url}. "
                     f"Content-Type={ct}. Body (first 300 chars): {preview}"
                 )
 
-            # Try to parse JSON even if content-type is missing/mis-set
+            # Parse JSON even if content-type is mis-set
             try:
                 return r.json()
             except Exception as e:
@@ -49,32 +50,48 @@ def _get_json(path: str, params=None):
             if attempt < MAX_RETRIES:
                 time.sleep(BACKOFF_S * attempt)
                 continue
-            raise
+            raise last_err
+
+
+def _safe_dataset(callable_fn, dataset_name: str):
+    """
+    Hobbyist plans will 403 certain datasets.
+    We skip those rather than failing the whole run.
+    """
+    try:
+        return callable_fn()
+    except RuntimeError as e:
+        msg = str(e)
+        if "Upgrade your subscription plan" in msg or "error 403" in msg:
+            print(f"[quiver_client] {dataset_name}: not available on current plan. Skipping.")
+            return []
+        raise
 
 
 # -----------------------
-# V1 feeds (latest)
+# Hobbyist-compliant (historical) endpoints
 # -----------------------
 
 def fetch_government_trades():
-    # Latest congress trades feed
-    return _get_json("/live/congresstrading")
+    # Hobbyist: use historical congress trading
+    return _safe_dataset(lambda: _get_json("/historical/congresstrading"), "government_trades")
 
 
 def fetch_insider_trades():
-    # Insider endpoint varies by plan. Start here; if it 404s, we’ll adjust once from logs.
-    return _get_json("/live/insiders")
+    # Hobbyist: use historical insider trading (NOT /live/insiders)
+    return _safe_dataset(lambda: _get_json("/historical/insidertrading"), "insider_trades")
 
 
 def fetch_contracts():
-    # Latest contract awards feed across all tickers
-    return _get_json("/live/govcontractsall")
+    # Hobbyist: contracts endpoint varies; try the most common historical path first,
+    # then fall back to the non-historical route if needed.
+    def _fetch():
+        try:
+            return _get_json("/historical/governmentcontracts")
+        except RuntimeError as e:
+            # If historical path not present for your account, try the alternate
+            if "error 404" in str(e) or "Not Found" in str(e):
+                return _get_json("/governmentcontracts")
+            raise
 
-
-# -----------------------
-# Optional (V1.2+): historical by ticker
-# -----------------------
-
-def fetch_congress_trades_by_ticker(ticker: str):
-    t = ticker.upper().strip()
-    return _get_json(f"/historical/congresstrading/{t}")
+    return _safe_dataset(_fetch, "contracts")
