@@ -87,4 +87,4 @@ def run():
     cur = conn.cursor()
 
     high_conv = CONFIG["thresholds"]["high_conviction"]
-    window_hours = int(CONFIG.get("windows", {}).
+    window_hours = int(CONFIG.get("windows", {}).get("lookback_hours", 24))
