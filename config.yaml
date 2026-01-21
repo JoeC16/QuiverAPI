@@ -17,3 +17,13 @@ thresholds:
 patterns:
   cluster_days: 10
   contract_window_days: 14
+
+windows:
+  lookback_days: 7
+
+thresholds:
+  high_conviction: 85
+  digest_min_score: 20   # keep low while testing; raise later
+
+digest:
+  top_n: 10
