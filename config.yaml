@@ -12,18 +12,14 @@ scoring:
 
 thresholds:
   high_conviction: 85
-  top_picks: 7
+  digest_min_score: 20
 
-patterns:
-  cluster_days: 10
-  contract_window_days: 14
+digest:
+  top_n: 10
 
 windows:
   lookback_days: 7
 
-thresholds:
-  high_conviction: 85
-  digest_min_score: 20   # keep low while testing; raise later
-
-digest:
-  top_n: 10
+patterns:
+  cluster_days: 10
+  contract_window_days: 14
